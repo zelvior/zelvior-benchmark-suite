@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Zelvior Benchmark Suite — ZBS</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="zbs-bg-grid" aria-hidden="true"></div>
+
+<header class="zbs-header">
+  <div class="zbs-brand">
+    <span class="zbs-brand-mark">ZBS</span>
+    <span class="zbs-brand-name">Zelvior Benchmark Suite</span>
+  </div>
+  <div class="zbs-header-actions">
+    <button id="btn-history" class="zbs-btn zbs-btn-ghost">History</button>
+    <button id="btn-replay" class="zbs-btn zbs-btn-ghost" disabled>Replay Last Run</button>
+  </div>
+</header>
+
+<main class="zbs-main">
+
+  <section id="panel-idle" class="zbs-panel zbs-panel-hero">
+    <div class="zbs-glass zbs-hero-card">
+      <h1>Instrument-grade browser benchmarking.</h1>
+      <p class="zbs-sub">Seeded, replayable, transparent. Every metric is labeled measured, estimated, or inferred — built to fairly compare a site before and after integrating <strong>Zelvior Runtime</strong>.</p>
+      <button id="btn-start" class="zbs-btn zbs-btn-primary zbs-btn-lg">Start Benchmark</button>
+      <div class="zbs-hero-meta">
+        <span id="last-run-summary">No previous run stored.</span>
+      </div>
+    </div>
+  </section>
+
+  <section id="panel-running" class="zbs-panel zbs-panel-running" hidden>
+    <div class="zbs-glass zbs-run-header">
+      <div class="zbs-run-status">
+        <div class="zbs-run-testname" id="run-testname">—</div>
+        <div class="zbs-run-sub">
+          Test <span id="run-index">0</span>/<span id="run-total">0</span>
+          &nbsp;·&nbsp; Elapsed <span id="run-elapsed">0.0s</span>
+          &nbsp;·&nbsp; Est. remaining <span id="run-eta">—</span>
+          &nbsp;·&nbsp; Seed <span id="run-seed">—</span>
+        </div>
+      </div>
+      <button id="btn-cancel" class="zbs-btn zbs-btn-ghost">Cancel</button>
+    </div>
+
+    <div class="zbs-glass zbs-progress-wrap">
+      <div class="zbs-progress-track"><div id="progress-bar" class="zbs-progress-bar"></div></div>
+    </div>
+
+    <div class="zbs-grid-3">
+      <div class="zbs-glass zbs-stat"><div class="zbs-stat-label">FPS</div><div id="stat-fps" class="zbs-stat-value">—</div></div>
+      <div class="zbs-glass zbs-stat"><div class="zbs-stat-label">Memory</div><div id="stat-mem" class="zbs-stat-value">—</div></div>
+      <div class="zbs-glass zbs-stat"><div class="zbs-stat-label">CPU (est.)</div><div id="stat-cpu" class="zbs-stat-value">—</div></div>
+    </div>
+
+    <div class="zbs-grid-2">
+      <div class="zbs-glass zbs-chart-card">
+        <div class="zbs-chart-title">FPS timeline</div>
+        <canvas id="chart-fps" class="zbs-chart"></canvas>
+      </div>
+      <div class="zbs-glass zbs-chart-card">
+        <div class="zbs-chart-title">Memory timeline</div>
+        <canvas id="chart-mem" class="zbs-chart"></canvas>
+      </div>
+    </div>
+
+    <div class="zbs-glass zbs-log-card">
+      <div class="zbs-chart-title">Status log</div>
+      <div id="log-output" class="zbs-log"></div>
+    </div>
+
+    <div id="zbs-stage" class="zbs-stage" aria-hidden="true"></div>
+  </section>
+
+  <section id="panel-report" class="zbs-panel zbs-panel-report" hidden>
+    <div class="zbs-glass zbs-report-hero">
+      <div class="zbs-score-ring" id="score-ring">
+        <span id="score-value">—</span>
+      </div>
+      <div>
+        <div class="zbs-rating" id="rating-label">—</div>
+        <div class="zbs-run-sub" id="report-meta">—</div>
+      </div>
+    </div>
+
+    <div class="zbs-glass zbs-score-grid" id="score-grid"></div>
+
+    <div class="zbs-glass zbs-chart-card">
+      <div class="zbs-chart-title">Category scores</div>
+      <canvas id="chart-scores" class="zbs-chart zbs-chart-tall"></canvas>
+    </div>
+
+    <div class="zbs-glass zbs-counts-card" id="counts-card"></div>
+
+    <div class="zbs-glass zbs-actions-card">
+      <button id="btn-download-json" class="zbs-btn zbs-btn-ghost">Download JSON</button>
+      <button id="btn-download-html" class="zbs-btn zbs-btn-ghost">Download HTML</button>
+      <button id="btn-download-pdf" class="zbs-btn zbs-btn-ghost">Download PDF</button>
+      <button id="btn-replay-this" class="zbs-btn zbs-btn-primary">Replay This Run</button>
+      <button id="btn-run-again" class="zbs-btn zbs-btn-ghost">New Random Run</button>
+    </div>
+  </section>
+
+  <section id="panel-history" class="zbs-panel" hidden>
+    <div class="zbs-glass">
+      <div class="zbs-chart-title">Run history &amp; comparison</div>
+      <div id="history-list" class="zbs-history-list"></div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="zbs-footer">
+  <span>Zelvior Benchmark Suite · deterministic, replayable, transparent</span>
+</footer>
+
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
