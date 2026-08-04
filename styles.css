@@ -139,6 +139,9 @@ html, body {
 .zbs-history-list { display: flex; flex-direction: column; gap: .6rem; }
 .zbs-history-item { display: flex; justify-content: space-between; align-items: center; padding: .7rem 1rem; border-radius: 8px; background: rgba(255,255,255,0.02); font-size: .82rem; }
 .zbs-history-item button { margin-left: .5rem; }
+.zbs-history-check { accent-color: var(--phosphor); width: 15px; height: 15px; cursor: pointer; }
+#compare-output table th, #compare-output table td { font-family: var(--mono); }
+#compare-output { margin-top: 1rem; }
 
 .zbs-footer { text-align: center; padding: 2rem; color: var(--text-dim); font-size: .72rem; }
 

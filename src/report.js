@@ -72,6 +72,13 @@ export function scoreRun(byTestId) {
   const svg = byTestId['svg-benchmark'];
   if (svg) scores.svg = timeScore(svg.results.renderTime.value, 50, 1500);
 
+  const cpu = byTestId['cpu-throughput'];
+  if (cpu) {
+    // Reference baseline ~80M ops/sec on a mid-tier 2024 laptop core.
+    // This is a relative throughput score, not a CPU-usage percentage.
+    scores.cpu = clampScore((cpu.results.opsPerSecond.value / 80_000_000) * 100);
+  }
+
   const rendering = byTestId['rendering-benchmark'];
   if (rendering) scores.rendering = timeScore(rendering.results.longTaskTime.value, 0, 1000);
 
@@ -169,10 +176,62 @@ export function downloadFile(filename, content, mime) {
 }
 
 export function downloadPDF(report) {
-  const html = reportToHTML(report);
-  const win = window.open('', '_blank');
-  win.document.write(html);
-  win.document.close();
-  win.focus();
-  win.print();
+  const jsPDFCtor = window.jspdf?.jsPDF;
+  if (!jsPDFCtor) {
+    // Fallback if the CDN script failed to load (e.g. offline / blocked).
+    const html = reportToHTML(report);
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+    return;
+  }
+  const doc = new jsPDFCtor({ unit: 'pt', format: 'a4' });
+  const marginX = 40;
+  let y = 50;
+
+  doc.setFont('courier', 'bold'); doc.setFontSize(20);
+  doc.text('Zelvior Benchmark Suite — Report', marginX, y); y += 30;
+
+  doc.setFont('courier', 'normal'); doc.setFontSize(11);
+  doc.text(`Overall score: ${report.overall ?? '—'} / 100  (${report.rating})`, marginX, y); y += 18;
+  doc.text(`Seed: ${report.meta.seed}`, marginX, y); y += 16;
+  doc.text(`Duration: ${(report.meta.durationMs / 1000).toFixed(1)}s`, marginX, y); y += 16;
+  doc.text(`Generated: ${report.meta.generatedAt}`, marginX, y); y += 16;
+  const browserLine = doc.splitTextToSize(`Browser: ${report.meta.browser || 'n/a'}`, 500);
+  doc.text(browserLine, marginX, y); y += 16 * browserLine.length + 10;
+
+  doc.setFont('courier', 'bold'); doc.text('Category Scores', marginX, y); y += 18;
+  doc.setFont('courier', 'normal');
+  for (const [k, v] of Object.entries(report.scores)) {
+    doc.text(`${k.padEnd(14, ' ')} ${v ?? '—'}`, marginX, y);
+    y += 15;
+    if (y > 760) { doc.addPage(); y = 50; }
+  }
+
+  y += 10;
+  doc.setFont('courier', 'bold'); doc.text('Counts', marginX, y); y += 18;
+  doc.setFont('courier', 'normal');
+  for (const [k, v] of Object.entries(report.counts)) {
+    doc.text(`${k.padEnd(16, ' ')} ${v}`, marginX, y);
+    y += 15;
+    if (y > 760) { doc.addPage(); y = 50; }
+  }
+
+  doc.save(`zbs-report-${report.meta.seed}.pdf`);
+}
+
+export function compareReports(a, b) {
+  const keys = new Set([...Object.keys(a.scores), ...Object.keys(b.scores)]);
+  const rows = [...keys].map((k) => {
+    const av = a.scores[k] ?? null;
+    const bv = b.scores[k] ?? null;
+    const delta = (av != null && bv != null) ? bv - av : null;
+    return { category: k, a: av, b: bv, delta };
+  });
+  return {
+    overallDelta: (a.overall != null && b.overall != null) ? b.overall - a.overall : null,
+    rows,
+  };
 }

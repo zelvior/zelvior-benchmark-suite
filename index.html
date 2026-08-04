@@ -108,8 +108,11 @@
   <section id="panel-history" class="zbs-panel" hidden>
     <div class="zbs-glass">
       <div class="zbs-chart-title">Run history &amp; comparison</div>
+      <p class="zbs-run-sub">Select exactly two runs to compare.</p>
       <div id="history-list" class="zbs-history-list"></div>
+      <button id="btn-compare" class="zbs-btn zbs-btn-primary" style="margin-top:1rem" disabled>Compare Selected</button>
     </div>
+    <div id="compare-output" class="zbs-glass" hidden></div>
   </section>
 
 </main>
@@ -118,6 +121,7 @@
   <span>Zelvior Benchmark Suite · deterministic, replayable, transparent</span>
 </footer>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script type="module" src="src/main.js"></script>
 </body>
 </html>

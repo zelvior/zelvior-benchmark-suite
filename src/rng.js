@@ -13,6 +13,25 @@ export function makeSeed() {
   return (Math.random() * 0xFFFFFFFF) >>> 0;
 }
 
+// xmur3 string hash — used to derive a stable per-test sub-seed from
+// (masterSeed, testId) so each test's randomness is fully self-contained.
+// This means replay is exact regardless of test execution order,
+// cancellation, or which subset of tests actually ran — unlike a single
+// shared RNG stream, where skipping or reordering any test would desync
+// every test that runs after it.
+export function deriveSeed(masterSeed, label) {
+  let h = 1779033703 ^ String(label).length;
+  const str = `${masterSeed}:${label}`;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+    h = (h << 13) | (h >>> 19);
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507);
+  h = Math.imul(h ^ (h >>> 13), 3266489909);
+  h ^= h >>> 16;
+  return h >>> 0;
+}
+
 export class SeededRandom {
   constructor(seed) {
     this.seed = seed >>> 0;

@@ -1,10 +1,12 @@
 {
   "name": "zelvior-benchmark-suite",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "npx serve .",
     "build": "echo 'static site, no build step'",
-    "start": "npx serve ."
+    "start": "npx serve .",
+    "test": "node test/self-test.mjs"
   }
 }

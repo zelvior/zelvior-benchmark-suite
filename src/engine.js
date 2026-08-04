@@ -1,4 +1,4 @@
-import { SeededRandom, makeSeed } from './rng.js';
+import { SeededRandom, makeSeed, deriveSeed } from './rng.js';
 import { RunScript, saveLastRun } from './replay.js';
 import { buildReport } from './report.js';
 import { now, FPSMonitor, memorySnapshot } from './metrics.js';
@@ -19,9 +19,11 @@ import { canvasBenchmarkTest } from './tests/canvas.js';
 import { svgBenchmarkTest } from './tests/svg.js';
 import { cssBenchmarkTest } from './tests/css.js';
 import { idleBenchmarkTest } from './tests/idle.js';
+import { cpuThroughputTest } from './tests/cpu.js';
 
 export const ALL_TESTS = [
   browserCapabilityTest,
+  cpuThroughputTest,
   domCreateTest,
   domUpdateTest,
   domRemoveTest,
@@ -60,7 +62,6 @@ export class BenchmarkEngine {
     this._cancel = false;
     const seed = replayScript ? replayScript.seed : makeSeed();
     const testOrder = replayScript ? replayScript.testOrder : ALL_TESTS.map(t => t.id);
-    const rng = new SeededRandom(seed);
     const runScript = replayScript || new RunScript(seed, testOrder, {});
 
     const byTestId = {};
@@ -95,9 +96,10 @@ export class BenchmarkEngine {
       logFn(`Starting: ${test.name}`);
 
       const forcedParams = replayScript ? replayScript.params[testId] : undefined;
+      const testRng = new SeededRandom(deriveSeed(seed, testId));
       const t0 = now();
       try {
-        const outcome = await test.run({ stage: this.stage, rng, forcedParams, log: logFn });
+        const outcome = await test.run({ stage: this.stage, rng: testRng, forcedParams, log: logFn });
         byTestId[testId] = outcome; // full {params, results}
         runScript.params[testId] = outcome.params;
         logFn(`Finished: ${test.name} (${((now() - t0) / 1000).toFixed(2)}s)`);

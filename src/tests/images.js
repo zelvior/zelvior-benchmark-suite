@@ -33,6 +33,7 @@ export const imageRenderingTest = {
     const { stage, rng, forcedParams, log } = ctx;
     const counts = forcedParams?.counts || COUNTS;
     const results = [];
+    const sourcesByCount = {};
     for (const count of counts) {
       stage.innerHTML = '';
       const grid = document.createElement('div');
@@ -46,6 +47,7 @@ export const imageRenderingTest = {
         const uri = kind === 'svg' ? svgDataUri(rng, size) : canvasDataUri(rng, size, `image/${kind === 'jpeg' ? 'jpeg' : kind}`);
         return { size, kind, lazy, uri };
       });
+      sourcesByCount[count] = sources;
 
       const memBefore = performance.memory ? performance.memory.usedJSHeapSize : null;
       const t0 = now();
@@ -75,6 +77,6 @@ export const imageRenderingTest = {
       });
       stage.innerHTML = '';
     }
-    return { params: { counts }, results };
+    return { params: { counts, sources: sourcesByCount }, results };
   },
 };

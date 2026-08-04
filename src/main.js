@@ -1,7 +1,7 @@
 import { BenchmarkEngine, ALL_TESTS } from './engine.js';
 import { LiveChart, drawBarChart } from './charts.js';
 import { loadLastRun, loadHistory, RunScript } from './replay.js';
-import { reportToJSON, reportToHTML, downloadFile, downloadPDF, ratingLabel } from './report.js';
+import { reportToJSON, reportToHTML, downloadFile, downloadPDF, ratingLabel, compareReports } from './report.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -115,18 +115,36 @@ function renderReport(report) {
   }
 }
 
+let historyEntries = [];
+
 function renderHistory() {
   const list = $('history-list');
   list.innerHTML = '';
-  const hist = loadHistory();
-  if (!hist.length) {
+  $('compare-output').hidden = true;
+  historyEntries = loadHistory();
+  if (!historyEntries.length) {
     list.innerHTML = '<div class="zbs-run-sub">No history yet.</div>';
+    $('btn-compare').disabled = true;
     return;
   }
-  hist.forEach((entry) => {
+  historyEntries.forEach((entry, i) => {
     const row = document.createElement('div');
     row.className = 'zbs-history-item';
-    row.innerHTML = `<span>${new Date(entry.savedAt).toLocaleString()} · seed ${entry.runScript.seed} · score ${entry.report.overall ?? '—'} (${ratingLabel(entry.report.overall)})</span>`;
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'zbs-history-check';
+    checkbox.dataset.index = i;
+    checkbox.addEventListener('change', updateCompareButtonState);
+
+    const label = document.createElement('span');
+    label.textContent = `${new Date(entry.savedAt).toLocaleString()} · seed ${entry.runScript.seed} · score ${entry.report.overall ?? '—'} (${ratingLabel(entry.report.overall)})`;
+
+    const left = document.createElement('label');
+    left.style.display = 'flex'; left.style.alignItems = 'center'; left.style.gap = '.6rem';
+    left.appendChild(checkbox); left.appendChild(label);
+    row.appendChild(left);
+
     const replayBtn = document.createElement('button');
     replayBtn.className = 'zbs-btn zbs-btn-ghost';
     replayBtn.textContent = 'Replay';
@@ -134,7 +152,58 @@ function renderHistory() {
     row.appendChild(replayBtn);
     list.appendChild(row);
   });
+  updateCompareButtonState();
 }
+
+function updateCompareButtonState() {
+  const checked = [...document.querySelectorAll('.zbs-history-check:checked')];
+  $('btn-compare').disabled = checked.length !== 2;
+}
+
+function renderComparison() {
+  const checked = [...document.querySelectorAll('.zbs-history-check:checked')].map(c => historyEntries[+c.dataset.index]);
+  if (checked.length !== 2) return;
+  const [runA, runB] = checked;
+  const diff = compareReports(runA.report, runB.report);
+  const out = $('compare-output');
+  out.hidden = false;
+
+  const sign = (n) => (n == null ? '—' : n > 0 ? `+${n}` : `${n}`);
+  const colorFor = (n) => (n == null ? 'var(--text-dim)' : n > 0 ? 'var(--phosphor)' : n < 0 ? 'var(--danger)' : 'var(--text-dim)');
+
+  out.innerHTML = `
+    <div class="zbs-chart-title">Comparison</div>
+    <p class="zbs-run-sub">
+      Run A: seed ${runA.runScript.seed} · ${new Date(runA.savedAt).toLocaleString()} · score ${runA.report.overall ?? '—'}<br>
+      Run B: seed ${runB.runScript.seed} · ${new Date(runB.savedAt).toLocaleString()} · score ${runB.report.overall ?? '—'}
+    </p>
+    <p style="font-size:1.3rem;margin:.6rem 0;color:${colorFor(diff.overallDelta)}">
+      Overall: ${sign(diff.overallDelta)}
+    </p>
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr>
+        <th style="text-align:left;padding:.4rem;border-bottom:1px solid var(--panel-border)">Category</th>
+        <th style="text-align:right;padding:.4rem;border-bottom:1px solid var(--panel-border)">A</th>
+        <th style="text-align:right;padding:.4rem;border-bottom:1px solid var(--panel-border)">B</th>
+        <th style="text-align:right;padding:.4rem;border-bottom:1px solid var(--panel-border)">Δ</th>
+      </tr></thead>
+      <tbody>
+        ${diff.rows.map(r => `<tr>
+          <td style="padding:.4rem">${r.category}</td>
+          <td style="padding:.4rem;text-align:right">${r.a ?? '—'}</td>
+          <td style="padding:.4rem;text-align:right">${r.b ?? '—'}</td>
+          <td style="padding:.4rem;text-align:right;color:${colorFor(r.delta)}">${sign(r.delta)}</td>
+        </tr>`).join('')}
+      </tbody>
+    </table>
+    <p class="zbs-run-sub" style="margin-top:.8rem">
+      Positive Δ = Run B scored higher than Run A on that category. Only compare runs captured on
+      the same browser/device for a meaningful before/after read — cross-device comparisons are
+      not controlled for hardware differences.
+    </p>`;
+}
+
+$('btn-compare')?.addEventListener('click', renderComparison);
 
 $('btn-start').addEventListener('click', () => startBenchmark(null));
 $('btn-run-again').addEventListener('click', () => startBenchmark(null));
