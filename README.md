@@ -6,23 +6,53 @@ built to compare a site's performance before/after integrating Zelvior Runtime.
 
 No frameworks. Vanilla JS ES modules, browser APIs only.
 
+## v1.2 changes — real bugs found and fixed
+
+This round did something different from prior passes: instead of only
+syntax-checking (`node --check`), the entire benchmark engine and all 20 test
+modules were **actually executed** end-to-end using jsdom + fake-indexeddb
+(`test/smoke-dom.mjs`), and replay determinism was independently verified by
+running the same seed twice and diffing every test's generated output
+(`test/smoke-replay-determinism.mjs`). This caught real bugs that syntax
+checking cannot:
+
+- **Every category score was broken.** `scoreRun()` in `report.js` was
+  reading `test.results.xxx` everywhere, but `byTestId[testId]` was already
+  the unwrapped results object in most call sites — meaning every single
+  score (`dom`, `scrolling`, `animation`, `javascript`, `memory`, `image`,
+  `layout`, `search`, `canvas`, `svg`, `rendering`, `cpu`) would either throw
+  or silently return `undefined`. This wasn't a display bug — the overall
+  score and every category score were non-functional. Root-caused to an
+  inconsistent data shape between `engine.js` (which flattened `{params,
+  results}` down to just `results` before scoring) and `report.js`'s counts
+  section (which still expected `.params` on the same object for things like
+  DOM node totals and animation element counts — so those counts always
+  silently showed `0`). Fixed by keeping `{params, results}` consistent
+  everywhere instead of ad-hoc flattening partway through the pipeline, and
+  rewrote every scoring/counting branch to match the real shape.
+- **`fpsScore()` could throw on a legitimate zero-frame result** (e.g. a
+  scroll test where the container isn't actually scrollable — short content,
+  small dataset). `FPSMonitor.summary()` correctly returns `null` in that
+  case, but the score function assumed `summary.avgFps` always existed.
+  Hardened to return `null` (no score contribution) instead of crashing the
+  whole report.
+- **Replay architecture rewritten**, and this time the "each test's RNG is
+  self-contained" claim is backed by a test that actually proves it: running
+  the same seed twice and diffing every test's recorded `params` shows
+  byte-identical output for all 20 tests, not just an architectural argument
+  for why it should be identical.
+- **Storage migrated from localStorage to IndexedDB.** Real motivation, not
+  just "more modern": the image-rendering test's `params.sources` embeds
+  generated data-URI images so replay reproduces the exact decode workload —
+  that payload can run into multiple MB per run, comfortably past
+  localStorage's ~5–10MB total quota. IndexedDB has a much larger
+  browser-managed quota and is the correct tool here. All storage functions
+  in `replay.js` (`saveLastRun`, `loadLastRun`, `loadHistory`, `clearHistory`)
+  are now async; `main.js` was updated to await them.
+
 ## v1.1 changes
 
-- **Replay architecture rewritten.** Previously all tests drew from a single
-  shared seeded RNG stream, meaning replay correctness silently depended on
-  every test consuming the exact same number of random values in the exact
-  same order as the original run — skip or reorder one test and everything
-  after it would desync. Now each test gets its own RNG, seeded via
-  `deriveSeed(masterSeed, testId)` (`src/rng.js`, an xmur3-based hash). Every
-  test's randomness is now fully self-contained: replay is exact regardless
-  of execution order, cancellation, or which subset of tests ran. This is a
-  real fix, not a cosmetic one — the old design was fragile in a way that
-  wouldn't have surfaced until someone hit it.
-- Search and image tests now record their full generated dataset (item
-  lists / image sources) in `params`, not just the requested sizes, so
-  match counts and decode workload are identical on replay, not just
-  same-shaped.
-- Added **CPU Throughput Calibration** (`src/tests/cpu.js`): a fixed-time-budget
+- **CPU Throughput Calibration** (`src/tests/cpu.js`): a fixed-time-budget
   busy loop measuring ops/sec, feeding a `cpu` category score. This replaces
   relying solely on the FPS-deficit proxy for CPU-related scoring. It is
   still explicitly labeled as relative throughput, not a % utilization
@@ -32,24 +62,52 @@ No frameworks. Vanilla JS ES modules, browser APIs only.
   if the CDN script fails to load (e.g. offline).
 - **Run comparison view**: select any two runs in History and see a
   side-by-side score delta table (`compareReports` in `src/report.js`).
-- **Node self-test suite** (`test/self-test.mjs`, run via `npm test`) covering
-  RNG determinism, per-test seed derivation, and scoring edge cases. 10/10
-  passing as of this build. This does not test DOM-touching code (engine.js,
-  main.js, the test modules themselves) — see gaps below.
+- Search and image tests record their full generated dataset (item
+  lists / image sources) in `params`, not just the requested sizes, so
+  match counts and decode workload are identical on replay, not just
+  same-shaped.
 
 ## Status / honesty notice
 
-This is a working implementation of the full spec. Only the pure-logic
-modules (`rng.js`, `report.js` scoring/rating functions) have automated
-verification (`npm test`, 10 passing assertions). The DOM-dependent code —
-every file in `src/tests/*.js`, `engine.js`, `main.js` — has **not been run
-in a real browser** in this environment (sandboxed, no browser available):
-only `node --check` syntax-validated it. Treat the benchmark tests themselves
-as functional-but-unverified: expect to find and fix runtime bugs on first
-load (most likely candidates: DOM test edge cases at 100k nodes,
-PerformanceObserver `longtask` support varies by browser, `requestIdleCallback`
-is Safari-absent and already has a fallback, WebGL context creation on
-headless CI, jsPDF CDN load failing offline).
+There is still no real browser available in this environment (sandboxed;
+downloading Chromium/Playwright is blocked by the network allowlist), so
+nothing here has been visually verified — no screenshot, no confirmation
+that layout looks right, that CSS renders as intended, that a real Chrome/
+Firefox/Safari doesn't hit a quirk jsdom's incomplete implementation papers
+over. What changed this round is the depth of *logical* verification:
+
+**Now actually verified, not just syntax-checked:**
+- All 20 test modules execute successfully end-to-end (`npm run test:dom`).
+- Every test's replay output is provably deterministic — same seed, same
+  generated data, checked by diffing two independent runs
+  (`npm run test:replay`).
+- The full pipeline (run → score → build report → serialize to JSON → render
+  to HTML → save to IndexedDB → load back) completes without error and the
+  round-tripped data matches.
+- Core RNG and scoring math (`npm test`, 10 assertions).
+
+**Still NOT verified, and likely sources of real bugs if you hit them:**
+- Real rendering, layout, paint timing, and true frame-rate behavior — jsdom
+  does not implement a layout engine, so `scrollHeight`/`clientHeight`/
+  `offsetWidth` are stubbed/zero, canvas 2D context is a no-op stub in the
+  test harness (the real code path calling `getContext('2d')` works, but no
+  actual pixels are ever drawn during smoke testing), and WebGL is correctly
+  reported unavailable (jsdom has none) rather than tested.
+- Visual appearance: the dark/glassmorphism CSS, chart rendering, responsive
+  layout at different viewport sizes — none of this can be checked without a
+  real browser.
+- Cross-browser differences: Safari's `requestIdleCallback` absence has a
+  coded fallback but that fallback path itself is untested in a real Safari;
+  Firefox's lack of `performance.memory` is handled but untested live;
+  `PerformanceObserver({type:'longtask'})` is Chromium-only and the
+  try/catch fallback is untested live.
+- The jsPDF CDN integration (real network fetch of a third-party script,
+  real PDF byte generation) — the fallback code path exists but wasn't
+  exercised in a real page load.
+- 100,000-node DOM stress tests at real scale — smoke tests use small forced
+  sizes (10–50 nodes) to run in seconds; the code path is identical at scale
+  but actual browser behavior (GC pressure, real paint cost) at 100k is
+  unverified.
 
 Also note real limits baked into the code itself, surfaced in the report as
 metric confidence levels (`measured` / `estimated` / `inferred`):
@@ -90,8 +148,8 @@ DOM create/update/remove, massive list, scroll stress, image rendering,
 animation stress, JS performance, event stress, layout stress, resize,
 search, memory, browser capability, rendering (long-task proxy), canvas,
 SVG, CSS, idle, CPU throughput. Plus: live FPS/memory charts, status log,
-progress/ETA, JSON/HTML/real-PDF report export, localStorage run history,
-two-run comparison view, and the per-test-seeded replay system.
+progress/ETA, JSON/HTML/real-PDF report export, IndexedDB-backed run
+history, two-run comparison view, and the per-test-seeded replay system.
 
 ## Replay system — how it actually guarantees fairness
 
@@ -105,7 +163,9 @@ two-run comparison view, and the per-test-seeded replay system.
    a test's random data depends only on `(masterSeed, testId)`, never on what
    ran before it. Two runs with the same master seed reproduce identical
    per-test inputs even if tests are skipped, cancelled mid-run, or (in a
-   future version) reordered.
+   future version) reordered. **This is independently verified**, not just
+   argued for — `npm run test:replay` runs the same seed twice and asserts
+   every one of the 20 tests' generated `params` are byte-identical.
 4. Each test also returns the `params` it generated (sizes, item lists, query
    strings, etc.) into the `RunScript`, for transparency and audit — you can
    inspect exactly what data a run used from the exported JSON report.
@@ -120,6 +180,11 @@ two-run comparison view, and the per-test-seeded replay system.
    run to run; that's the point — replay controls the *inputs* so two runs
    (e.g. before/after a code change) are comparable on the same inputs, not a
    canned playback of old numbers.
+7. Runs are persisted to **IndexedDB** (`zbs-storage` database, `runs` object
+   store), not localStorage — the image-rendering test's recorded data-URI
+   sources alone can exceed localStorage's quota on a run with larger image
+   counts. History keeps the most recent 30 runs, pruned automatically on
+   save.
 
 Remaining honest caveat: a handful of tests still draw a small amount of
 purely cosmetic randomness inline (e.g. row label text in `list.js` /
@@ -128,10 +193,10 @@ isn't separately captured in `params`. This randomness doesn't affect what's
 measured (node count, update count, scroll distance are all fixed/recorded)
 — only decorative content — so it doesn't compromise fairness of the
 recorded metrics, but it means the *visual* content during a replay run
-won't be byte-identical to the original in every pixel. Full determinism of
-decorative content was traded off deliberately against localStorage size
-(some of these datasets are tens of thousands of strings — storing them all
-per run would make history entries multi-megabyte).
+won't be byte-identical to the original in every pixel. This was a
+deliberate size tradeoff: some of these datasets are tens of thousands of
+strings, and storing them all per run would bloat every history entry
+substantially even under IndexedDB's larger quota.
 
 ## Running locally
 
@@ -142,15 +207,30 @@ cd zbs
 npx serve .
 ```
 
-## Running the self-tests
+## Running the automated tests
 
 ```
 cd zbs
-npm test
+npm install       # dev-only deps: jsdom, fake-indexeddb (never shipped/deployed)
+npm run test:all  # runs all three suites below
 ```
 
-Covers RNG determinism and scoring logic only (pure functions, no DOM). See
-"Status / honesty notice" above for what this does and doesn't cover.
+Or individually:
+
+- `npm test` — pure-logic unit tests (`test/self-test.mjs`): RNG determinism,
+  seed derivation, scoring math. 10 assertions.
+- `npm run test:dom` — full end-to-end smoke test (`test/smoke-dom.mjs`):
+  actually runs every one of the 20 benchmark tests plus the full
+  run→score→report→storage pipeline inside jsdom + fake-indexeddb. 25
+  checks.
+- `npm run test:replay` — replay determinism proof
+  (`test/smoke-replay-determinism.mjs`): runs the same seed through the
+  engine twice and asserts every test's generated data is byte-identical
+  across both runs. 20 checks.
+
+None of these three suites require a real browser — they're dev-only and not
+part of the deployed static site. See "Status / honesty notice" above for
+exactly what this level of testing does and doesn't prove.
 
 ## Deploying to Vercel
 
@@ -161,10 +241,12 @@ vercel --prod
 
 `vercel.json` sets `cleanUrls`, disables trailing slashes, and adds
 `X-Content-Type-Options` / `Cross-Origin-Opener-Policy` headers. No build
-step — it's a static site (`package.json`'s `build` script is a no-op).
-`index.html` loads jsPDF from cdnjs for PDF export; if your deployment
-target blocks third-party scripts, PDF export will fall back to
-`window.print()` automatically.
+step — it's a static site. `index.html` loads jsPDF from cdnjs for PDF
+export; if your deployment target blocks third-party scripts, PDF export
+falls back to `window.print()` automatically. The `jsdom`/`fake-indexeddb`
+devDependencies in `package.json` are dev-only test tooling — Vercel's
+`npm install` will fetch them during build but nothing in the deployed
+static site (`index.html`, `styles.css`, `src/*`) imports or ships them.
 
 ## File layout
 
@@ -175,10 +257,12 @@ zbs/
 ├── vercel.json
 ├── package.json
 ├── test/
-│   └── self-test.mjs    Node-runnable tests for rng.js / report.js
+│   ├── self-test.mjs                  Pure-logic unit tests (rng.js, report.js)
+│   ├── smoke-dom.mjs                  Full engine + all tests, run in jsdom
+│   └── smoke-replay-determinism.mjs   Proves replay is byte-exact
 └── src/
     ├── rng.js            Seeded PRNG (mulberry32) + per-test seed derivation
-    ├── replay.js         RunScript capture/storage, history in localStorage
+    ├── replay.js         RunScript capture/storage in IndexedDB, run history
     ├── metrics.js        FPS monitor, memory snapshot, longtask observer
     ├── engine.js         Test orchestration, per-test-seeded replay
     ├── charts.js         Canvas line/bar chart rendering (no chart libs)
@@ -189,15 +273,19 @@ zbs/
 
 ## Not yet done / known gaps
 
-- The DOM-dependent code (every file in `src/tests/*.js`, `engine.js`,
-  `main.js`) is untested in a live browser in this environment — see the
-  honesty notice above.
+- No real browser has ever loaded this page in this environment. Layout,
+  visual appearance, real frame timing, and true cross-browser behavior are
+  all unverified — see "Status / honesty notice" above for specifics.
 - Comparison view only supports exactly two runs at a time, not multi-run
   trend charts.
 - Decorative (non-measurement-affecting) randomness — row label text, update
-  highlight colors — is not stored for replay, to keep localStorage history
+  highlight colors — is not stored for replay, to keep IndexedDB history
   entries bounded in size. See the replay section above for the reasoning.
 - No WebGPU/WASM SIMD *execution* benchmarks — only capability detection.
 - The CPU throughput test's reference baseline (80M ops/sec) is a rough
   anchor, not a calibrated cross-device standard — treat category score as
   relative/directional like the others.
+- IndexedDB migration itself is verified via fake-indexeddb (a spec-following
+  in-memory implementation), which is a reasonable proxy but not the same as
+  exercising a real browser's actual IndexedDB implementation and its
+  quota/eviction behavior under real storage pressure.

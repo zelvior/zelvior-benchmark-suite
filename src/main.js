@@ -27,8 +27,8 @@ function initCharts() {
 }
 initCharts();
 
-function refreshLastRunSummary() {
-  const last = loadLastRun();
+async function refreshLastRunSummary() {
+  const last = await loadLastRun();
   const btn = $('btn-replay');
   if (last) {
     $('last-run-summary').textContent =
@@ -86,7 +86,7 @@ async function startBenchmark(replayScript = null) {
   $('run-seed').textContent = runScript.seed;
   renderReport(report);
   showPanel('report');
-  refreshLastRunSummary();
+  await refreshLastRunSummary();
 }
 
 function renderReport(report) {
@@ -117,11 +117,12 @@ function renderReport(report) {
 
 let historyEntries = [];
 
-function renderHistory() {
+async function renderHistory() {
   const list = $('history-list');
-  list.innerHTML = '';
+  list.innerHTML = '<div class="zbs-run-sub">Loading…</div>';
   $('compare-output').hidden = true;
-  historyEntries = loadHistory();
+  historyEntries = await loadHistory();
+  list.innerHTML = '';
   if (!historyEntries.length) {
     list.innerHTML = '<div class="zbs-run-sub">No history yet.</div>';
     $('btn-compare').disabled = true;
@@ -208,8 +209,8 @@ $('btn-compare')?.addEventListener('click', renderComparison);
 $('btn-start').addEventListener('click', () => startBenchmark(null));
 $('btn-run-again').addEventListener('click', () => startBenchmark(null));
 $('btn-cancel').addEventListener('click', () => currentEngine?.cancel());
-$('btn-replay').addEventListener('click', () => {
-  const last = loadLastRun();
+$('btn-replay').addEventListener('click', async () => {
+  const last = await loadLastRun();
   if (last) startBenchmark(RunScript.fromJSON(last.runScript));
 });
 $('btn-replay-this').addEventListener('click', () => {

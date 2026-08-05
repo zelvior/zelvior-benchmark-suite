@@ -115,16 +115,9 @@ export class BenchmarkEngine {
     liveFpsMonitor.stop();
     const finishedAt = now();
 
-    // Normalize: report scoring reads test.results directly (unwrap {params,results}).
-    const flatById = {};
-    for (const [id, v] of Object.entries(byTestId)) flatById[id] = v.results ?? v;
+    const report = buildReport({ runScript, byTestId, log, startedAt, finishedAt });
 
-    const report = buildReport({
-      runScript, byTestId: flatById, log, startedAt, finishedAt,
-      capability: byTestId['browser-capability'],
-    });
-
-    saveLastRun(runScript, report);
+    await saveLastRun(runScript, report);
     this.onProgress({ index: testOrder.length, total: testOrder.length, testId: null, testName: 'Complete', elapsedMs: finishedAt - startedAt });
     return { runScript, report };
   }
