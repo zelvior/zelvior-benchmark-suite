@@ -6,6 +6,50 @@ built to compare a site's performance before/after integrating Zelvior Runtime.
 
 No frameworks. Vanilla JS ES modules, browser APIs only.
 
+## v1.2.1 — a real live-browser bug, reported by an actual user
+
+The Image Rendering Test hung indefinitely (stuck on "Starting: Image
+Rendering Test" forever) the first time this ran in a real browser. This is
+exactly the class of bug the honesty notice in prior versions warned was
+possible and unverified — jsdom-based smoke testing could not have caught
+it, because jsdom doesn't implement real viewport-gated lazy image loading
+at all.
+
+**Root cause:** `images.js` set `img.loading = 'lazy'` on roughly half of
+the generated images (`rng.bool(0.5)`). Native `loading="lazy"` only starts
+fetching/decoding an image once it's near the viewport. The benchmark stage
+(`.zbs-stage` in `styles.css`) is deliberately positioned off-screen
+(`left: -9999px`) so benchmark DOM never affects visible layout — which
+means it never intersects the viewport, which means every `loading="lazy"`
+image's `onload` never fires, which means `Promise.all(loadPromises)` in
+`images.js` waits forever. A real, silent, total hang, reachable on every
+single run with ~50% probability per image (in practice, near-certain to
+hit at least one lazy image per run at any tested count ≥ 50).
+
+**Fixes:**
+- Removed the `img.loading = ...` assignment. The `lazy` flag is still
+  recorded per-image in `params.sources` for reporting/replay purposes, but
+  the native browser attribute is no longer set, since it's fundamentally
+  incompatible with an intentionally off-screen stage.
+- Added a per-image 8-second timeout (`Promise.race`-style, via a
+  `setTimeout` fallback resolve) as defense in depth, so any *other* future
+  stall in a single image load can't hang the whole test either.
+- Added a **global per-test watchdog** in `engine.js` (20-second timeout per
+  test, `runWithWatchdog()`): if any test — this one or a future one — ever
+  fails to resolve, the engine now logs a timeout error for that test and
+  moves on to the next one, rather than freezing the entire benchmark run
+  silently with no feedback. This does not (and cannot, in plain JS without
+  threading `AbortController` through every test) truly cancel a stalled
+  test's background work — it just guarantees the *suite* keeps moving.
+- Added a regression test (`test/self-test.mjs`) that scans the source for
+  `img.loading =` and fails the build if it reappears, so this exact bug
+  can't silently reintroduce itself.
+
+This is the first bug in this project that was found by a real browser
+rather than by this sandbox's own testing — which is exactly the gap the
+honesty notice below has been flagging all along. It's evidence the warning
+was accurate, not evidence the warning is no longer needed.
+
 ## v1.2 changes — real bugs found and fixed
 
 This round did something different from prior passes: instead of only
@@ -84,7 +128,7 @@ over. What changed this round is the depth of *logical* verification:
 - The full pipeline (run → score → build report → serialize to JSON → render
   to HTML → save to IndexedDB → load back) completes without error and the
   round-tripped data matches.
-- Core RNG and scoring math (`npm test`, 10 assertions).
+- Core RNG and scoring math (`npm test`, 11 assertions).
 
 **Still NOT verified, and likely sources of real bugs if you hit them:**
 - Real rendering, layout, paint timing, and true frame-rate behavior — jsdom
@@ -218,7 +262,7 @@ npm run test:all  # runs all three suites below
 Or individually:
 
 - `npm test` — pure-logic unit tests (`test/self-test.mjs`): RNG determinism,
-  seed derivation, scoring math. 10 assertions.
+  seed derivation, scoring math, and a regression check for the image-loading hang below. 11 assertions.
 - `npm run test:dom` — full end-to-end smoke test (`test/smoke-dom.mjs`):
   actually runs every one of the 20 benchmark tests plus the full
   run→score→report→storage pipeline inside jsdom + fake-indexeddb. 25

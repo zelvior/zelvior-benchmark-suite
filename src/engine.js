@@ -46,6 +46,22 @@ export const ALL_TESTS = [
 
 const TEST_BY_ID = Object.fromEntries(ALL_TESTS.map(t => [t.id, t]));
 
+// No single test is allowed to hang the entire suite forever. This is a
+// deliberate safety net, not a substitute for fixing real hangs at the
+// source (see images.js for a real one that was found and fixed) — it
+// exists because a real browser can surface stalls this codebase's own
+// jsdom-based testing cannot reproduce (jsdom doesn't implement real
+// viewport-gated lazy loading, real network stalls, etc).
+const TEST_TIMEOUT_MS = 20000;
+
+function runWithWatchdog(promise, timeoutMs, testName) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Timed out after ${timeoutMs / 1000}s (test likely stalled)`)), timeoutMs);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
 export class BenchmarkEngine {
   constructor({ stage, onProgress, onLog, onLiveMetric }) {
     this.stage = stage;
@@ -99,7 +115,11 @@ export class BenchmarkEngine {
       const testRng = new SeededRandom(deriveSeed(seed, testId));
       const t0 = now();
       try {
-        const outcome = await test.run({ stage: this.stage, rng: testRng, forcedParams, log: logFn });
+        const outcome = await runWithWatchdog(
+          test.run({ stage: this.stage, rng: testRng, forcedParams, log: logFn }),
+          TEST_TIMEOUT_MS,
+          test.name,
+        );
         byTestId[testId] = outcome; // full {params, results}
         runScript.params[testId] = outcome.params;
         logFn(`Finished: ${test.name} (${((now() - t0) / 1000).toFixed(2)}s)`);

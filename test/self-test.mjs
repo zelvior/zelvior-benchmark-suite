@@ -1,6 +1,7 @@
 // Node-runnable self-tests for the pure-logic modules (no DOM required).
 // Run: npm test
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { mulberry32, deriveSeed, SeededRandom } from '../src/rng.js';
 import { scoreRun, ratingLabel } from '../src/report.js';
 
@@ -96,6 +97,16 @@ test('scoreRun handles a minimal synthetic byTestId without throwing', () => {
 test('scoreRun returns null overall for empty input', () => {
   const { overall } = scoreRun({});
   assert.equal(overall, null);
+});
+
+console.log('src/tests/images.js (source scan)');
+
+test('image-rendering test does not set native loading="lazy" on an off-screen stage', () => {
+  const src = fs.readFileSync(new URL('../src/tests/images.js', import.meta.url), 'utf8');
+  assert.ok(!/img\.loading\s*=/.test(src),
+    'img.loading is set — on the off-screen .zbs-stage this never intersects the viewport, ' +
+    'so loading="lazy" images never fire onload and Promise.all hangs forever. ' +
+    'This exact bug shipped once already; this check exists so it cannot silently regress.');
 });
 
 console.log(`\n${passed} test(s) passed.`);

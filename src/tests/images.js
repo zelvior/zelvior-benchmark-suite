@@ -51,14 +51,30 @@ export const imageRenderingTest = {
 
       const memBefore = performance.memory ? performance.memory.usedJSHeapSize : null;
       const t0 = now();
+      const IMAGE_TIMEOUT_MS = 8000;
       const loadPromises = sources.map(src => new Promise((resolve) => {
         const img = new Image();
-        img.loading = src.lazy ? 'lazy' : 'eager';
+        // NOTE: native `loading="lazy"` is intentionally NOT set here, even
+        // though `src.lazy` records which images were *intended* as lazy
+        // vs eager for reporting purposes. Native lazy-loading is gated on
+        // viewport intersection, and the benchmark stage is deliberately
+        // positioned off-screen (see .zbs-stage in styles.css) so it never
+        // affects visible layout — meaning a real `loading="lazy"` image
+        // here would never intersect the viewport and would never fire
+        // onload, hanging this Promise.all forever. This was a real bug,
+        // not a hypothetical: it reproduced reliably in a live browser.
         img.width = src.size; img.height = src.size;
-        img.onload = () => resolve(now());
-        img.onerror = () => resolve(now());
+        let settled = false;
+        const finish = (t) => { if (!settled) { settled = true; resolve(t); } };
+        img.onload = () => finish(now());
+        img.onerror = () => finish(now());
         img.src = src.uri;
         grid.appendChild(img);
+        // Defense in depth: even eager/non-lazy loads should never fail to
+        // fire onload/onerror for a same-document data: URI, but if some
+        // other browser quirk ever stalls a load, don't let one image hang
+        // the entire benchmark suite indefinitely.
+        setTimeout(() => finish(now()), IMAGE_TIMEOUT_MS);
       }));
       const decodeTimes = await Promise.all(loadPromises);
       const decodeTime = decodeTimes.reduce((a, b) => Math.max(a, b), 0) - t0;
